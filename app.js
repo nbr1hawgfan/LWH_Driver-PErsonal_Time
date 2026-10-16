@@ -563,10 +563,13 @@
     try { localStorage.setItem('uto_theme', t); } catch (e) {}
     const m = $('#metaTheme'); if (m) m.setAttribute('content', t === 'dark' ? '#0f1419' : '#ffffff');
     // Button shows what you'll switch TO
-    $('#btnTheme').innerHTML = t === 'dark' ? '☀️<span>Light</span>' : '🌙<span>Dark</span>';
+    const btn = $('#btnTheme');
+    if (btn) btn.innerHTML = t === 'dark' ? '☀️<span>Light</span>' : '🌙<span>Dark</span>';
   }
-  $('#btnTheme').addEventListener('click', () => applyTheme(currentTheme() === 'dark' ? 'light' : 'dark'));
-  applyTheme(currentTheme());
+  // Guarded so a stale cached index.html (without the button) can't stop the app from loading
+  const themeBtn = $('#btnTheme');
+  if (themeBtn) themeBtn.addEventListener('click', () => applyTheme(currentTheme() === 'dark' ? 'light' : 'dark'));
+  try { applyTheme(currentTheme()); } catch (e) {}
 
   /* ------------------------------ global ------------------------------ */
   $('#bottomnav').addEventListener('click', e => { const b = e.target.closest('button'); if (b) show(b.dataset.view); });
