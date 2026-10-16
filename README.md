@@ -4,6 +4,8 @@ A standalone PWA for drivers to request **unpaid time off (UTO)** when they have
 
 ## What it does
 
+The app opens in a **light theme** by default. Anyone can tap the 🌙 / ☀️ button at the top to switch to dark mode, and each phone remembers its choice.
+
 **Drivers** (Request / My Requests tabs)
 - Pick their name from a dropdown. There's no sign-in, and the app remembers the last name picked on that phone.
 - Request full day(s) or a partial day with times. A reason category and a written reason are required.

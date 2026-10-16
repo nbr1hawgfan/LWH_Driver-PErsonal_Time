@@ -555,6 +555,19 @@
   $('#modalClose').addEventListener('click', closeModal);
   $('#modal').addEventListener('click', e => { if (e.target.id === 'modal') closeModal(); });
 
+  /* ------------------------------ theme ------------------------------ */
+  function currentTheme() { return document.documentElement.getAttribute('data-theme') === 'dark' ? 'dark' : 'light'; }
+  function applyTheme(t) {
+    if (t === 'dark') document.documentElement.setAttribute('data-theme', 'dark');
+    else document.documentElement.removeAttribute('data-theme');
+    try { localStorage.setItem('uto_theme', t); } catch (e) {}
+    const m = $('#metaTheme'); if (m) m.setAttribute('content', t === 'dark' ? '#0f1419' : '#ffffff');
+    // Button shows what you'll switch TO
+    $('#btnTheme').innerHTML = t === 'dark' ? '☀️<span>Light</span>' : '🌙<span>Dark</span>';
+  }
+  $('#btnTheme').addEventListener('click', () => applyTheme(currentTheme() === 'dark' ? 'light' : 'dark'));
+  applyTheme(currentTheme());
+
   /* ------------------------------ global ------------------------------ */
   $('#bottomnav').addEventListener('click', e => { const b = e.target.closest('button'); if (b) show(b.dataset.view); });
   $('#btnRefresh').addEventListener('click', () => {

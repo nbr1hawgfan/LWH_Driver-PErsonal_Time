@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-  <meta name="theme-color" content="#0f1419">
+  <meta name="theme-color" content="#ffffff" id="metaTheme">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <meta name="apple-mobile-web-app-title" content="Time Off">
@@ -12,6 +12,14 @@
   <link rel="icon" href="icons/icon-192.png">
   <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
   <link rel="stylesheet" href="styles.css">
+  <script>
+    // Apply the saved theme before first paint (light is the default)
+    (function () {
+      var t = 'light';
+      try { t = localStorage.getItem('uto_theme') || 'light'; } catch (e) {}
+      if (t === 'dark') document.documentElement.setAttribute('data-theme', 'dark');
+    })();
+  </script>
 </head>
 <body>
   <header class="topbar">
@@ -22,7 +30,10 @@
         <div class="sub" id="whoami">Logistics Warehouse</div>
       </div>
     </div>
-    <button class="icon-btn" id="btnRefresh" title="Refresh" aria-label="Refresh">⟳</button>
+    <div class="top-actions">
+      <button class="icon-btn theme-btn" id="btnTheme" title="Switch light / dark" aria-label="Switch light or dark mode"></button>
+      <button class="icon-btn" id="btnRefresh" title="Refresh" aria-label="Refresh">⟳</button>
+    </div>
   </header>
 
   <main id="app">
