@@ -1,0 +1,189 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#0f1419">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="Time Off">
+  <title>LWH Time Off</title>
+  <link rel="manifest" href="manifest.json">
+  <link rel="icon" href="icons/icon-192.png">
+  <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">
+      <img src="icons/icon-192.png" alt="" class="logo">
+      <div>
+        <div class="title">Time Off Requests</div>
+        <div class="sub" id="whoami">Logistics Warehouse</div>
+      </div>
+    </div>
+    <button class="icon-btn" id="btnRefresh" title="Refresh" aria-label="Refresh">⟳</button>
+  </header>
+
+  <main id="app">
+    <!-- DRIVER SIGN-IN -->
+    <section class="view" id="view-signin" hidden>
+      <div class="card narrow">
+        <h2>Driver sign in</h2>
+        <p class="muted">Use this app to request <b>unpaid time off</b> when you have no PTO balance.</p>
+        <form id="formSignin" autocomplete="off">
+          <label>Employee #
+            <input id="inEmp" inputmode="numeric" required placeholder="e.g. 1042">
+          </label>
+          <label id="pinWrap" hidden>PIN
+            <input id="inPin" inputmode="numeric" type="password" maxlength="8" placeholder="Your PIN">
+          </label>
+          <button class="btn primary block" type="submit">Continue</button>
+        </form>
+      </div>
+    </section>
+
+    <!-- NEW REQUEST -->
+    <section class="view" id="view-request" hidden>
+      <form id="formReq" class="card" autocomplete="off">
+        <h2>New unpaid time off request</h2>
+
+        <div class="seg" role="radiogroup" aria-label="Request type">
+          <button type="button" class="seg-btn active" data-type="Full">Full day(s)</button>
+          <button type="button" class="seg-btn" data-type="Partial">Partial day</button>
+        </div>
+
+        <div class="grid2">
+          <label><span id="lblStart">Start date</span>
+            <input type="date" id="inStart" required>
+          </label>
+          <label id="wrapEnd">End date
+            <input type="date" id="inEnd">
+          </label>
+        </div>
+
+        <div class="grid2" id="wrapTimes" hidden>
+          <label>From
+            <input type="time" id="inT1" step="900">
+          </label>
+          <label>To
+            <input type="time" id="inT2" step="900">
+          </label>
+        </div>
+
+        <div class="summary" id="reqSummary">Pick your dates</div>
+
+        <label>Reason category
+          <select id="inCat" required><option value="">Select…</option></select>
+        </label>
+        <label>Reason <span class="muted small">(required)</span>
+          <textarea id="inReason" rows="4" maxlength="1000" required placeholder="Briefly explain why you need the time off"></textarea>
+        </label>
+        <div class="muted small right" id="reasonCount">0 / 1000</div>
+
+        <button class="btn primary block" type="submit" id="btnSubmit">Submit request</button>
+        <p class="muted small center">Both transportation managers are notified by email. Either one can approve.</p>
+      </form>
+    </section>
+
+    <!-- MY REQUESTS -->
+    <section class="view" id="view-mine" hidden>
+      <div class="row-between">
+        <h2>My requests</h2>
+        <button class="btn ghost small" id="btnSignout">Sign out</button>
+      </div>
+      <div id="mineList" class="list"></div>
+    </section>
+
+    <!-- MANAGER -->
+    <section class="view" id="view-mgr" hidden>
+      <div id="mgrLogin" class="card narrow">
+        <h2>Manager sign in</h2>
+        <p class="muted">Enter your manager PIN.</p>
+        <div class="pin-dots" id="pinDots"><i></i><i></i><i></i><i></i><i></i><i></i></div>
+        <div class="keypad" id="keypad">
+          <button>1</button><button>2</button><button>3</button>
+          <button>4</button><button>5</button><button>6</button>
+          <button>7</button><button>8</button><button>9</button>
+          <button data-k="clr">Clear</button><button>0</button><button data-k="go" class="go">Enter</button>
+        </div>
+      </div>
+
+      <div id="mgrPanel" hidden>
+        <div class="row-between">
+          <div class="muted small" id="mgrWho"></div>
+          <button class="btn ghost small" id="btnMgrOut">Sign out</button>
+        </div>
+        <nav class="subtabs" id="mgrTabs">
+          <button data-sub="pending" class="active">Pending <span class="badge" id="pendCount">0</span></button>
+          <button data-sub="upcoming">Upcoming</button>
+          <button data-sub="drivers">Drivers</button>
+          <button data-sub="all">All</button>
+        </nav>
+
+        <div class="sub" id="sub-pending"><div class="list" id="pendList"></div></div>
+
+        <div class="sub" id="sub-upcoming" hidden>
+          <p class="muted small">Approved time off for the next 30 days.</p>
+          <div id="upList"></div>
+        </div>
+
+        <div class="sub" id="sub-drivers" hidden>
+          <div class="toolbar">
+            <input type="search" id="drvSearch" placeholder="Search drivers">
+            <select id="drvYear"></select>
+            <button class="btn small" id="btnAddDriver">+ Driver</button>
+          </div>
+          <div class="table-wrap">
+            <table class="tbl" id="drvTable">
+              <thead><tr>
+                <th data-sort="name">Driver</th>
+                <th data-sort="occ" title="Approved requests">Occ.</th>
+                <th data-sort="days" title="Approved full days">Days</th>
+                <th data-sort="hours" title="Approved partial-day hours">Hrs</th>
+                <th data-sort="r90" title="Approved occurrences, rolling 90 days">90d</th>
+                <th data-sort="denied">Denied</th>
+                <th data-sort="last">Last</th>
+              </tr></thead>
+              <tbody></tbody>
+            </table>
+          </div>
+          <p class="muted small">Occurrence = one approved request. Tap a driver for full history.</p>
+        </div>
+
+        <div class="sub" id="sub-all" hidden>
+          <div class="toolbar">
+            <input type="search" id="allSearch" placeholder="Search name, reason, ID">
+            <select id="allStatus">
+              <option value="">All statuses</option>
+              <option>Pending</option><option>Approved</option><option>Denied</option><option>Cancelled</option>
+            </select>
+            <button class="btn small" id="btnCsv">CSV</button>
+          </div>
+          <div class="list" id="allList"></div>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <nav class="bottomnav" id="bottomnav">
+    <button data-view="request" class="active"><span>＋</span>Request</button>
+    <button data-view="mine"><span>☰</span>My Requests</button>
+    <button data-view="mgr"><span>🔒</span>Manager</button>
+  </nav>
+
+  <dialog id="modal">
+    <div class="modal-head">
+      <h3 id="modalTitle"></h3>
+      <button class="icon-btn" id="modalClose" aria-label="Close">✕</button>
+    </div>
+    <div id="modalBody"></div>
+  </dialog>
+
+  <div id="toast" class="toast" hidden></div>
+  <div id="busy" class="busy" hidden><div class="spinner"></div></div>
+
+  <script src="config.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
