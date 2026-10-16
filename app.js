@@ -46,13 +46,32 @@
 
   async function api(action, data = {}) {
     if (!API || API.indexOf('PASTE') === 0) throw new Error('API_URL is not set in config.js');
-    const res = await fetch(API, {
-      method: 'POST',
-      headers: { 'Content-Type': 'text/plain;charset=utf-8' }, // avoids CORS preflight with GAS
-      body: JSON.stringify(Object.assign({ action }, data)),
-      redirect: 'follow'
-    });
-    const j = await res.json();
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), 60000);
+    let text;
+    try {
+      const res = await fetch(API, {
+        method: 'POST',
+        headers: { 'Content-Type': 'text/plain;charset=utf-8' }, // avoids CORS preflight with GAS
+        body: JSON.stringify(Object.assign({ action }, data)),
+        redirect: 'follow',
+        signal: ctrl.signal
+      });
+      text = await res.text();
+    } catch (e) {
+      throw new Error(e.name === 'AbortError'
+        ? 'No response from the server after 60 seconds. Check My Requests before resubmitting.'
+        : 'Could not reach the server. Check your connection and try again.');
+    } finally {
+      clearTimeout(timer);
+    }
+    let j;
+    try { j = JSON.parse(text); }
+    catch (e) {
+      throw new Error(/accounts\.google|ServiceLogin|Sign in/i.test(text)
+        ? 'Backend asked for a Google sign-in. Set the deployment\'s access to "Anyone".'
+        : 'Backend returned a web page instead of data. Check API_URL ends in /exec and the deployment is current.');
+    }
     if (!j.ok) {
       if (j.error === 'SESSION_EXPIRED') { mgrSignOut(true); throw new Error('Manager session expired. Sign in again.'); }
       throw new Error(j.error || 'Request failed');
