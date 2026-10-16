@@ -11,17 +11,17 @@ const TZ = 'America/Chicago';
 const SH = { REQ: 'Requests', DRV: 'Drivers', MGR: 'Managers', CFG: 'Config', LOG: 'Log' };
 
 const HEADERS = {
-  Requests: ['ID', 'Submitted', 'EmpID', 'DriverName', 'DriverEmail', 'Type', 'StartDate', 'EndDate',
+  Requests: ['ID', 'Submitted', 'DriverName', 'DriverEmail', 'Type', 'StartDate', 'EndDate',
              'StartTime', 'EndTime', 'Days', 'Hours', 'Category', 'Reason', 'Status', 'DecidedBy',
              'DecidedAt', 'ManagerNote', 'Seq', 'CancelledAt', 'CancelledBy'],
-  Drivers:  ['EmpID', 'Name', 'Email', 'PIN', 'Active'],
+  Drivers:  ['Name', 'Email', 'Active'],
   Managers: ['Name', 'Email', 'PIN', 'Active'],
   Config:   ['Key', 'Value', 'Notes'],
   Log:      ['Timestamp', 'Who', 'Action', 'Detail']
 };
 
 const CATEGORIES = ['Personal', 'Family', 'Medical', 'Vehicle / Transportation', 'Bereavement', 'Court / Legal', 'Weather', 'Other'];
-const TEXT_COLS = ['ID', 'EmpID', 'StartDate', 'EndDate', 'StartTime', 'EndTime', 'PIN'];
+const TEXT_COLS = ['ID', 'StartDate', 'EndDate', 'StartTime', 'EndTime', 'PIN'];
 const MAX_DAYS = 30;
 const TOKEN_TTL = 8 * 60 * 60; // 8 hours
 
@@ -58,7 +58,7 @@ function setup() {
 
   const drv = ss.getSheetByName(SH.DRV);
   if (drv.getLastRow() === 1) {
-    drv.appendRow(['1001', 'Sample Driver', '', '', true]);
+    drv.appendRow(['Sample Driver', '', true]);
   }
 
   log_('system', 'setup', 'Sheets initialized');
@@ -84,7 +84,6 @@ function doPost(e) {
     const body = JSON.parse((e && e.postData && e.postData.contents) || '{}');
     const handlers = {
       meta: apiMeta_,
-      identify: apiIdentify_,
       submit: apiSubmit_,
       myRequests: apiMyRequests_,
       driverCancel: apiDriverCancel_,
@@ -106,16 +105,15 @@ function doPost(e) {
 /* ============================== DRIVER API ============================== */
 
 function apiMeta_() {
-  return { categories: CATEGORIES, maxDays: MAX_DAYS, today: today_() };
-}
-
-function apiIdentify_(b) {
-  const d = authDriver_(b.empId, b.pin);
-  return { driver: { empId: d.EmpID, name: d.Name, needsPin: !!String(d.PIN).trim() } };
+  const drivers = readTable_(SH.DRV)
+    .filter(d => truthy_(d.Active) && String(d.Name).trim())
+    .map(d => String(d.Name).trim())
+    .sort((x, y) => x.localeCompare(y));
+  return { categories: CATEGORIES, maxDays: MAX_DAYS, today: today_(), drivers: drivers };
 }
 
 function apiSubmit_(b) {
-  const d = authDriver_(b.empId, b.pin);
+  const d = authDriver_(b.driver);
   const r = b.request || {};
   const type = r.type === 'Partial' ? 'Partial' : 'Full';
 
@@ -141,13 +139,13 @@ function apiSubmit_(b) {
 
   return withLock_(() => {
     const overlap = readTable_(SH.REQ).find(x =>
-      String(x.EmpID) === String(d.EmpID) &&
+      x.DriverName === d.Name &&
       (x.Status === 'Pending' || x.Status === 'Approved') &&
       x.StartDate <= endDate && x.EndDate >= r.startDate);
     if (overlap) throw new Error('You already have a ' + overlap.Status.toLowerCase() + ' request covering those dates (' + overlap.ID + ').');
 
     const req = {
-      ID: newId_(), Submitted: now_(), EmpID: String(d.EmpID), DriverName: d.Name, DriverEmail: d.Email || '',
+      ID: newId_(), Submitted: now_(), DriverName: d.Name, DriverEmail: d.Email || '',
       Type: type, StartDate: r.startDate, EndDate: endDate, StartTime: startTime, EndTime: endTime,
       Days: days, Hours: hours, Category: r.category, Reason: reason, Status: 'Pending',
       DecidedBy: '', DecidedAt: '', ManagerNote: '', Seq: 0, CancelledAt: '', CancelledBy: ''
@@ -160,19 +158,19 @@ function apiSubmit_(b) {
 }
 
 function apiMyRequests_(b) {
-  const d = authDriver_(b.empId, b.pin);
+  const d = authDriver_(b.driver);
   const list = readTable_(SH.REQ)
-    .filter(x => String(x.EmpID) === String(d.EmpID))
+    .filter(x => x.DriverName === d.Name)
     .map(publicReq_)
     .sort((a, b) => b.submitted.localeCompare(a.submitted));
   return { requests: list };
 }
 
 function apiDriverCancel_(b) {
-  const d = authDriver_(b.empId, b.pin);
+  const d = authDriver_(b.driver);
   return withLock_(() => {
     const req = findReq_(b.id);
-    if (String(req.EmpID) !== String(d.EmpID)) throw new Error('Request not found.');
+    if (req.DriverName !== d.Name) throw new Error('Request not found.');
     if (req.Status !== 'Pending' && req.Status !== 'Approved') throw new Error('This request can no longer be cancelled.');
     if (req.EndDate < today_()) throw new Error('Past requests cannot be cancelled. Contact a manager.');
     const wasApproved = req.Status === 'Approved';
@@ -212,8 +210,8 @@ function apiMgrLogout_(b) {
 function apiMgrData_(b) {
   const m = authMgr_(b.token);
   const requests = readTable_(SH.REQ).map(mgrReq_).sort((a, b) => b.submitted.localeCompare(a.submitted));
-  const drivers = readTable_(SH.DRV).map(d => ({
-    empId: String(d.EmpID), name: d.Name, email: d.Email || '', hasPin: !!String(d.PIN).trim(), active: truthy_(d.Active)
+  const drivers = readTable_(SH.DRV).filter(d => String(d.Name).trim()).map(d => ({
+    name: String(d.Name).trim(), email: d.Email || '', active: truthy_(d.Active)
   }));
   return { manager: m, requests: requests, drivers: drivers, categories: CATEGORIES, today: today_() };
 }
@@ -257,16 +255,24 @@ function apiMgrCancel_(b) {
 function apiSaveDriver_(b) {
   const m = authMgr_(b.token);
   const d = b.driver || {};
-  const empId = String(d.empId || '').trim();
   const name = String(d.name || '').trim();
-  if (!empId || !name) throw new Error('Employee # and name are required.');
+  const orig = String(d.originalName || '').trim();
+  if (!name) throw new Error('Name is required.');
   return withLock_(() => {
-    const existing = readTable_(SH.DRV).find(x => String(x.EmpID).trim() === empId);
-    const row = { EmpID: empId, Name: name, Email: String(d.email || '').trim(), Active: d.active !== false };
-    if (d.pin !== undefined && d.pin !== null) row.PIN = String(d.pin).trim();
-    if (existing) updateObj_(SH.DRV, existing._row, row);
-    else appendObj_(SH.DRV, Object.assign({ PIN: '' }, row));
-    log_(m.name, 'saveDriver', empId + ' ' + name);
+    const roster = readTable_(SH.DRV);
+    const existing = orig ? roster.find(x => String(x.Name).trim() === orig) : null;
+    const clash = roster.find(x => String(x.Name).trim().toLowerCase() === name.toLowerCase() && x !== existing);
+    if (clash) throw new Error('A driver named "' + name + '" already exists. Add a middle initial or last-name initial to tell them apart.');
+    const row = { Name: name, Email: String(d.email || '').trim(), Active: d.active !== false };
+    if (existing) {
+      updateObj_(SH.DRV, existing._row, row);
+      // Keep history together if a name is corrected
+      if (orig !== name) readTable_(SH.REQ).filter(r => r.DriverName === orig)
+        .forEach(r => updateObj_(SH.REQ, r._row, { DriverName: name }));
+    } else {
+      appendObj_(SH.DRV, row);
+    }
+    log_(m.name, 'saveDriver', (orig && orig !== name ? orig + ' → ' : '') + name);
     return {};
   });
 }
@@ -303,7 +309,7 @@ function emailShell_(title, color, rows, footer) {
 }
 
 function reqRows_(r) {
-  return [['Driver', r.DriverName + ' (#' + r.EmpID + ')'], ['When', whenText_(r)], ['Category', r.Category], ['Reason', r.Reason], ['Request ID', r.ID]];
+  return [['Driver', r.DriverName], ['When', whenText_(r)], ['Category', r.Category], ['Reason', r.Reason], ['Request ID', r.ID]];
 }
 
 function notifyManagersNew_(r) {
@@ -433,13 +439,12 @@ function safeMail_(opts) {
 
 /* ============================== AUTH ============================== */
 
-function authDriver_(empId, pin) {
-  const id = String(empId || '').trim();
-  if (!id) throw new Error('Enter your employee number.');
-  const d = readTable_(SH.DRV).find(x => String(x.EmpID).trim() === id);
-  if (!d || !truthy_(d.Active)) throw new Error('Employee # not found. See a manager to be added.');
-  const need = String(d.PIN || '').trim();
-  if (need && String(pin || '').trim() !== need) throw new Error(pin ? 'Incorrect PIN.' : 'PIN required.');
+function authDriver_(name) {
+  const n = String(name || '').trim();
+  if (!n) throw new Error('Select your name.');
+  const d = readTable_(SH.DRV).find(x => String(x.Name).trim() === n);
+  if (!d || !truthy_(d.Active)) throw new Error('Driver not found. See a manager to be added.');
+  d.Name = String(d.Name).trim();
   return d;
 }
 
@@ -461,7 +466,7 @@ function publicReq_(r) {
 }
 
 function mgrReq_(r) {
-  return Object.assign(publicReq_(r), { empId: String(r.EmpID), driverName: r.DriverName, cancelledAt: String(r.CancelledAt || '') });
+  return Object.assign(publicReq_(r), { driverName: r.DriverName, cancelledAt: String(r.CancelledAt || '') });
 }
 
 /* ============================== SHEET HELPERS ============================== */

@@ -5,7 +5,7 @@ A standalone PWA for drivers to request **unpaid time off (UTO)** when they have
 ## What it does
 
 **Drivers** (Request / My Requests tabs)
-- Sign in once with their Employee #. A per-driver PIN is optional.
+- Pick their name from a dropdown. There's no sign-in, and the app remembers the last name picked on that phone.
 - Request full day(s) or a partial day with times. A reason category and a written reason are required.
 - See the status of every request and the manager's notes, and cancel pending or approved requests that haven't happened yet.
 
@@ -40,7 +40,7 @@ The calendar event is marked **Free / all-day**, so it shows who's out without b
 
 ### 2. Fill in the Sheet
 - **Managers** tab: C. Morland and D. Dixon are pre-filled with placeholder PINs **1111 / 2222**. **Change these now.** Fix the names if needed.
-- **Drivers** tab: add each driver's EmpID, Name, Email (optional), PIN (optional), and Active (TRUE). Delete the sample row. Drivers can also be added from the Manager tab in the app.
+- **Drivers** tab: add each driver's Name (exactly as it should show in the dropdown), Email (optional), and Active (TRUE). Delete the sample row. Unchecking Active hides a driver from the dropdown but keeps their history. Drivers can also be added or renamed from the Manager tab, and renaming there carries their history along.
 - **Config** tab: set `APP_URL` to your GitHub Pages URL after step 4.
 
 ### 3. Deploy the API
@@ -66,6 +66,7 @@ Managers can bookmark `…/LWH_Time_Off_Requests/#manager` to open straight to t
 - **Outlook invite**: the .ics comes as an attachment. Opening it in Outlook shows the event with Accept or Add to Calendar. Fully automatic calendar inserts would need Microsoft Graph access through IT, which is a possible phase 2.
 - **Who sends the email**: emails come from the Google account that deployed the script. A shared ops account is a good choice. Consumer Gmail can send about 100 emails a day, Workspace about 1,500.
 - **Occurrence** means one approved request. Denied and cancelled requests are counted separately and don't count as occurrences.
-- **Security**: the manager PIN locks after 5 bad tries for 15 minutes. Manager sessions expire after 8 hours. Driver sign-in is Employee # only unless you set a PIN on the Drivers tab. Add PINs if you don't want drivers to be able to view each other's requests.
+- **Security**: only the manager PINs protect anything. Each PIN locks after 5 bad tries for 15 minutes, and manager sessions expire after 8 hours. The driver side is open by design, so anyone with the link could submit for, or view the requests of, any name in the list. Managers review every request, so a bogus one just gets denied.
+- Two drivers with the same name need something to tell them apart in the Name column, like a last-name initial or middle initial. The app won't save duplicate names.
 - Dates are stored as plain text (`yyyy-MM-dd`) in the Sheet so they never shift time zones. The time zone is America/Chicago.
 - Each request is limited to 30 days. A driver can't submit two overlapping pending or approved requests.

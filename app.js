@@ -6,14 +6,14 @@
   const $ = (s, r = document) => r.querySelector(s);
   const $$ = (s, r = document) => Array.from(r.querySelectorAll(s));
 
-  const LS_DRIVER = 'uto_driver';
+  const LS_DRIVER = 'uto_last_driver';
   const SS_MGR = 'uto_mgr';
 
   const state = {
     view: 'request',
-    driver: load(localStorage, LS_DRIVER),      // { empId, pin, name }
-    mgr: load(sessionStorage, SS_MGR),          // { token, name }
-    meta: { categories: [], maxDays: 30, today: localToday() },
+    driver: load(localStorage, LS_DRIVER) || '',   // last driver name picked on this device
+    mgr: load(sessionStorage, SS_MGR),             // { token, name }
+    meta: { categories: [], drivers: [], maxDays: 30, today: localToday() },
     reqType: 'Full',
     mine: [],
     m: { requests: [], drivers: [], sub: 'pending', sort: { key: 'occ', asc: false } },
@@ -71,46 +71,32 @@
   function show(view) {
     state.view = view;
     $$('.bottomnav button').forEach(b => b.classList.toggle('active', b.dataset.view === view));
-    $$('.view').forEach(v => { v.hidden = true; });
-    if ((view === 'request' || view === 'mine') && !state.driver) { $('#view-signin').hidden = false; }
-    else $('#view-' + view).hidden = false;
-
-    if (view === 'mine' && state.driver) loadMine();
+    $$('.view').forEach(v => { v.hidden = v.id !== 'view-' + view; });
+    if (view === 'mine') loadMine();
     if (view === 'mgr') renderMgrShell();
     updateWho();
   }
 
   function updateWho() {
-    $('#whoami').textContent = state.view === 'mgr' && state.mgr ? 'Manager · ' + state.mgr.name
-      : state.driver ? state.driver.name + ' · #' + state.driver.empId : 'Logistics Warehouse';
+    $('#whoami').textContent = state.view === 'mgr' && state.mgr ? 'Manager · ' + state.mgr.name : 'Logistics Warehouse';
   }
 
-  /* ------------------------------ driver sign-in ------------------------------ */
-  $('#formSignin').addEventListener('submit', e => {
-    e.preventDefault();
-    const empId = $('#inEmp').value.trim();
-    const pin = $('#inPin').value.trim();
-    run(async () => {
-      try {
-        const j = await api('identify', { empId, pin });
-        state.driver = { empId: j.driver.empId, pin, name: j.driver.name };
-        save(localStorage, LS_DRIVER, state.driver);
-        $('#inPin').value = ''; $('#pinWrap').hidden = true;
-        toast('Welcome, ' + j.driver.name, 'ok');
-        show(state.view === 'mgr' ? 'request' : state.view);
-      } catch (err) {
-        if (/PIN/.test(err.message)) { $('#pinWrap').hidden = false; $('#inPin').focus(); }
-        throw err;
-      }
+  /* ------------------------------ driver picker ------------------------------ */
+  function fillDriverSelects() {
+    const opts = '<option value="">Select your name…</option>' +
+      state.meta.drivers.map(n => `<option>${esc(n)}</option>`).join('');
+    ['#inDriver', '#mineDriver'].forEach(sel => {
+      const el = $(sel); el.innerHTML = opts;
+      if (state.meta.drivers.indexOf(state.driver) > -1) el.value = state.driver;
     });
-  });
-
-  $('#btnSignout').addEventListener('click', () => {
-    if (!confirm('Sign out of this device?')) return;
-    state.driver = null; state.mine = [];
-    save(localStorage, LS_DRIVER, null);
-    show('request');
-  });
+  }
+  function setDriver(name) {
+    state.driver = name;
+    save(localStorage, LS_DRIVER, name || null);
+    $('#inDriver').value = name; $('#mineDriver').value = name;
+  }
+  $('#inDriver').addEventListener('change', e => setDriver(e.target.value));
+  $('#mineDriver').addEventListener('change', e => { setDriver(e.target.value); state.mine = []; loadMine(); });
 
   /* ------------------------------ new request ------------------------------ */
   $$('.seg-btn').forEach(b => b.addEventListener('click', () => {
@@ -138,7 +124,7 @@
     const type = state.reqType;
     const startDate = $('#inStart').value;
     const r = { type, startDate, category: $('#inCat').value, reason: $('#inReason').value.trim() };
-    if (!startDate) return { r, err: 'Pick your dates' , soft: true };
+    if (!startDate) return { r, err: 'Pick your dates', soft: true };
     if (type === 'Full') {
       r.endDate = $('#inEnd').value || startDate;
       if (r.endDate < startDate) return { r, err: 'End date is before start date' };
@@ -168,24 +154,30 @@
 
   $('#formReq').addEventListener('submit', e => {
     e.preventDefault();
+    const driver = $('#inDriver').value;
+    if (!driver) return toast('Select your name', 'err');
     const { r, err } = computeReq();
     if (err) return toast(err, 'err');
     if (!r.category) return toast('Pick a reason category', 'err');
     if (r.reason.length < 5) return toast('Please explain the reason', 'err');
     run(async () => {
-      await api('submit', { empId: state.driver.empId, pin: state.driver.pin, request: r });
+      await api('submit', { driver, request: r });
       toast('Request submitted. Managers have been notified.', 'ok');
       $('#formReq').reset(); $('#reasonCount').textContent = '0 / 1000';
+      $('#inDriver').value = driver;
       $$('.seg-btn')[0].click();
+      state.mine = [];
       show('mine');
     });
   });
 
   /* ------------------------------ my requests ------------------------------ */
-  function loadMine(quiet) {
-    if (!state.mine.length) $('#mineList').innerHTML = '<div class="empty">Loading…</div>';
+  function loadMine() {
+    const el = $('#mineList');
+    if (!state.driver) { el.innerHTML = '<div class="empty">Select your name to see your requests.</div>'; return; }
+    if (!state.mine.length) el.innerHTML = '<div class="empty">Loading…</div>';
     return run(async () => {
-      const j = await api('myRequests', { empId: state.driver.empId, pin: state.driver.pin });
+      const j = await api('myRequests', { driver: state.driver });
       state.mine = j.requests;
       renderMine();
     }, true);
@@ -205,7 +197,7 @@
           <span class="pill ${r.status}">${r.status}</span>
         </div>
         <div class="req-reason">${esc(r.reason)}</div>
-        ${r.decidedBy ? `<div class="req-meta">${r.status === 'Cancelled' ? '' : esc(r.status) + ' by ' + esc(r.decidedBy) + ' · ' + esc(r.decidedAt)}</div>` : ''}
+        ${r.decidedBy && r.status !== 'Cancelled' ? `<div class="req-meta">${esc(r.status)} by ${esc(r.decidedBy)} · ${esc(r.decidedAt)}</div>` : ''}
         ${r.status === 'Cancelled' && r.cancelledBy ? `<div class="req-meta">Cancelled by ${esc(r.cancelledBy)}</div>` : ''}
         ${r.managerNote ? `<div class="req-note">Manager note: ${esc(r.managerNote)}</div>` : ''}
         ${(r.status === 'Pending' || r.status === 'Approved') && r.endDate >= today
@@ -217,9 +209,9 @@
     const id = e.target.dataset.cancel;
     if (!id || !confirm('Cancel this request?')) return;
     run(async () => {
-      await api('driverCancel', { empId: state.driver.empId, pin: state.driver.pin, id });
+      await api('driverCancel', { driver: state.driver, id });
       toast('Request cancelled', 'ok');
-      await loadMine(true);
+      await loadMine();
     });
   });
 
@@ -299,9 +291,9 @@
 
   function overlaps(a, b) { return a.startDate <= b.endDate && a.endDate >= b.startDate; }
 
-  function driverStats(empId, year) {
+  function driverStats(name, year) {
     const today = state.meta.today, d90 = addDays(today, -90);
-    const reqs = state.m.requests.filter(r => r.empId === empId);
+    const reqs = state.m.requests.filter(r => r.driverName === name);
     const inYear = reqs.filter(r => !year || r.startDate.slice(0, 4) === String(year));
     const appr = inYear.filter(r => r.status === 'Approved');
     return {
@@ -320,7 +312,7 @@
       <div class="req ${r.status}">
         <div class="req-top">
           <div>
-            <div class="req-name"><a href="#" data-driver="${esc(r.empId)}" style="color:inherit">${esc(r.driverName)}</a> <span class="muted small">#${esc(r.empId)}</span></div>
+            <div class="req-name"><a href="#" data-driver="${esc(r.driverName)}" style="color:inherit">${esc(r.driverName)}</a></div>
             <div class="req-when">${esc(when(r))}</div>
             <div class="req-meta">${esc(amount(r))} · ${esc(r.category)} · submitted ${esc(r.submitted)} · ${esc(r.id)}</div>
           </div>
@@ -341,8 +333,8 @@
     if (!list.length) { el.innerHTML = '<div class="empty">Nothing waiting. 👍</div>'; return; }
     const yr = state.meta.today.slice(0, 4);
     el.innerHTML = list.map(r => {
-      const st = driverStats(r.empId, yr);
-      const others = state.m.requests.filter(x => x.status === 'Approved' && x.empId !== r.empId && overlaps(x, r));
+      const st = driverStats(r.driverName, yr);
+      const others = state.m.requests.filter(x => x.status === 'Approved' && x.driverName !== r.driverName && overlaps(x, r));
       const flags = `<div class="flags">
         <span class="flag ${st.occ >= 3 ? 'warn' : ''}">${st.occ} approved occurrence${st.occ === 1 ? '' : 's'} in ${yr}</span>
         <span class="flag ${st.r90 >= 2 ? 'warn' : ''}">${st.r90} in last 90 days</span>
@@ -368,7 +360,7 @@
       const out = appr.filter(r => r.startDate <= d && r.endDate >= d);
       if (!out.length) continue;
       html += `<div class="day-group"><div class="day-head"><span>${esc(fmtD(d))}${d === today ? ' · Today' : ''}</span><span>${out.length} out</span></div>
-        ${out.map(r => `<div class="day-row"><a href="#" data-driver="${esc(r.empId)}" style="color:inherit">${esc(r.driverName)}</a>
+        ${out.map(r => `<div class="day-row"><a href="#" data-driver="${esc(r.driverName)}" style="color:inherit">${esc(r.driverName)}</a>
           <span class="muted">${r.type === 'Partial' ? esc(fmtT(r.startTime) + '–' + fmtT(r.endTime)) : 'All day'}</span></div>`).join('')}</div>`;
     }
     el.innerHTML = html;
@@ -386,12 +378,12 @@
   function renderDrivers() {
     const year = $('#drvYear').value;
     const q = $('#drvSearch').value.trim().toLowerCase();
-    const known = new Map(state.m.drivers.map(d => [d.empId, d]));
+    const known = new Map(state.m.drivers.map(d => [d.name, d]));
     // Include anyone who has requests even if removed from roster
-    state.m.requests.forEach(r => { if (!known.has(r.empId)) known.set(r.empId, { empId: r.empId, name: r.driverName, active: false }); });
+    state.m.requests.forEach(r => { if (!known.has(r.driverName)) known.set(r.driverName, { name: r.driverName, active: false }); });
     let rows = [...known.values()]
-      .filter(d => !q || d.name.toLowerCase().includes(q) || d.empId.includes(q))
-      .map(d => Object.assign({ d }, driverStats(d.empId, year), { name: d.name }));
+      .filter(d => !q || d.name.toLowerCase().includes(q))
+      .map(d => Object.assign({ d }, driverStats(d.name, year), { name: d.name }));
     const { key, asc } = state.m.sort;
     rows.sort((a, b) => {
       const va = a[key], vb = b[key];
@@ -403,8 +395,8 @@
       th.classList.toggle('asc', th.dataset.sort === key && asc);
     });
     $('#drvTable tbody').innerHTML = rows.length ? rows.map(r => `
-      <tr data-driver="${esc(r.d.empId)}" class="${r.d.active ? '' : 'inactive'}">
-        <td><b>${esc(r.name)}</b> <span class="muted small">#${esc(r.d.empId)}</span></td>
+      <tr data-driver="${esc(r.name)}" class="${r.d.active ? '' : 'inactive'}">
+        <td><b>${esc(r.name)}</b></td>
         <td class="${r.occ >= 3 ? 'hot' : ''}">${r.occ}</td>
         <td>${r.days}</td>
         <td>${r.hours}</td>
@@ -428,7 +420,7 @@
     const q = $('#allSearch').value.trim().toLowerCase();
     const st = $('#allStatus').value;
     return state.m.requests.filter(r => (!st || r.status === st) &&
-      (!q || [r.driverName, r.empId, r.reason, r.category, r.id].join(' ').toLowerCase().includes(q)));
+      (!q || [r.driverName, r.reason, r.category, r.id].join(' ').toLowerCase().includes(q)));
   }
 
   function renderAll() {
@@ -445,7 +437,7 @@
   $('#allStatus').addEventListener('change', renderAll);
 
   $('#btnCsv').addEventListener('click', () => {
-    const cols = ['id', 'submitted', 'empId', 'driverName', 'type', 'startDate', 'endDate', 'startTime', 'endTime', 'days', 'hours', 'category', 'reason', 'status', 'decidedBy', 'decidedAt', 'managerNote', 'cancelledBy', 'cancelledAt'];
+    const cols = ['id', 'submitted', 'driverName', 'type', 'startDate', 'endDate', 'startTime', 'endTime', 'days', 'hours', 'category', 'reason', 'status', 'decidedBy', 'decidedAt', 'managerNote', 'cancelledBy', 'cancelledAt'];
     const q = v => '"' + String(v == null ? '' : v).replace(/"/g, '""') + '"';
     const csv = [cols.join(',')].concat(filteredAll().map(r => cols.map(c => q(r[c])).join(','))).join('\r\n');
     const a = document.createElement('a');
@@ -481,19 +473,19 @@
         await api('mgrCancel', { token: state.mgr.token, id, note });
         toast('Request cancelled' + (r.status === 'Approved' ? ' — calendar cancellation sent' : ''), 'ok');
         await loadMgr(true);
-        if ($('#modal').open) openDriver(r.empId);
+        if ($('#modal').open) openDriver(r.driverName);
       });
     }
   }
   $('#mgrPanel').addEventListener('click', mgrClick);
 
-  function openDriver(empId) {
-    const d = state.m.drivers.find(x => x.empId === empId) || { empId, name: (state.m.requests.find(r => r.empId === empId) || {}).driverName || empId, active: false };
+  function openDriver(name) {
+    const d = state.m.drivers.find(x => x.name === name) || { name, active: false };
     const yr = state.meta.today.slice(0, 4);
-    const st = driverStats(empId, yr);
-    const all = driverStats(empId, '');
+    const st = driverStats(name, yr);
+    const all = driverStats(name, '');
     const list = st.reqs.slice().sort((a, b) => b.startDate.localeCompare(a.startDate));
-    $('#modalTitle').textContent = d.name + '  #' + empId;
+    $('#modalTitle').textContent = d.name;
     $('#modalBody').innerHTML = `
       <div class="stat-row">
         <div class="stat"><b>${st.occ}</b><span>Occ. ${yr}</span></div>
@@ -502,44 +494,40 @@
         <div class="stat"><b>${all.occ}</b><span>All-time</span></div>
       </div>
       <div class="list">${list.length ? list.map(r => reqCard(r, { actions: cancelAction(r) })).join('') : '<div class="empty">No requests.</div>'}</div>
-      ${state.m.drivers.find(x => x.empId === empId) ? `<button class="btn ghost block" data-editdriver="${esc(empId)}">Edit driver</button>` : ''}`;
+      ${state.m.drivers.find(x => x.name === name) ? `<button class="btn ghost block" data-editdriver="${esc(name)}">Edit driver</button>` : ''}`;
     openModal();
   }
 
   /* ------------------------------ manager: roster ------------------------------ */
   function driverForm(d) {
     const isNew = !d;
-    d = d || { empId: '', name: '', email: '', active: true };
+    d = d || { name: '', email: '', active: true };
     $('#modalTitle').textContent = isNew ? 'Add driver' : 'Edit driver';
     $('#modalBody').innerHTML = `
       <form id="formDriver">
-        <label>Employee #<input name="empId" value="${esc(d.empId)}" ${isNew ? '' : 'readonly'} required></label>
-        <label>Name<input name="name" value="${esc(d.name)}" required></label>
+        <label>Name <span class="muted small">(as it should appear in the dropdown)</span><input name="name" value="${esc(d.name)}" required></label>
         <label>Email <span class="muted small">(optional — gets decision emails)</span><input name="email" type="email" value="${esc(d.email)}"></label>
-        <label>Driver PIN <span class="muted small">(optional — ${isNew ? 'leave blank for none' : d.hasPin ? 'set; leave blank to keep, type NONE to remove' : 'none set'})</span><input name="pin" inputmode="numeric"></label>
-        <label style="display:flex;gap:8px;align-items:center"><input type="checkbox" name="active" ${d.active ? 'checked' : ''} style="width:auto;margin:0"> Active</label>
+        <label style="display:flex;gap:8px;align-items:center"><input type="checkbox" name="active" ${d.active ? 'checked' : ''} style="width:auto;margin:0"> Active (shows in the dropdown)</label>
         <button class="btn primary block" type="submit">Save</button>
       </form>`;
     $('#formDriver').addEventListener('submit', ev => {
       ev.preventDefault();
       const f = ev.target;
-      const pinRaw = f.pin.value.trim();
-      const payload = { empId: f.empId.value.trim(), name: f.name.value.trim(), email: f.email.value.trim(), active: f.active.checked };
-      if (pinRaw.toUpperCase() === 'NONE') payload.pin = '';
-      else if (pinRaw || isNew) payload.pin = pinRaw;
+      const payload = { originalName: isNew ? '' : d.name, name: f.name.value.trim(), email: f.email.value.trim(), active: f.active.checked };
       run(async () => {
         await api('saveDriver', { token: state.mgr.token, driver: payload });
         toast('Driver saved', 'ok');
         closeModal();
         await loadMgr(true);
+        refreshMeta();
       });
     });
     openModal();
   }
   $('#btnAddDriver').addEventListener('click', () => driverForm(null));
   $('#modalBody').addEventListener('click', e => {
-    const id = e.target.dataset.editdriver;
-    if (id) return driverForm(state.m.drivers.find(x => x.empId === id));
+    const name = e.target.dataset.editdriver;
+    if (name) return driverForm(state.m.drivers.find(x => x.name === name));
     if (state.mgr) mgrClick(e);
   });
 
@@ -552,21 +540,27 @@
   $('#bottomnav').addEventListener('click', e => { const b = e.target.closest('button'); if (b) show(b.dataset.view); });
   $('#btnRefresh').addEventListener('click', () => {
     if (state.view === 'mgr' && state.mgr) loadMgr();
-    else if (state.view === 'mine' && state.driver) run(() => loadMine(true));
-    else location.reload();
+    else if (state.view === 'mine') { state.mine = []; refreshMeta(); loadMine(); }
+    else refreshMeta();
   });
 
-  async function init() {
-    const sel = $('#inCat');
+  async function refreshMeta() {
     try {
       const j = await api('meta');
       state.meta = Object.assign(state.meta, j);
     } catch (e) {
-      state.meta.categories = ['Personal', 'Family', 'Medical', 'Vehicle / Transportation', 'Bereavement', 'Court / Legal', 'Weather', 'Other'];
+      if (!state.meta.categories.length) state.meta.categories = ['Personal', 'Family', 'Medical', 'Vehicle / Transportation', 'Bereavement', 'Court / Legal', 'Weather', 'Other'];
       toast(e.message, 'err');
     }
-    sel.innerHTML = '<option value="">Select…</option>' + state.meta.categories.map(c => `<option>${esc(c)}</option>`).join('');
+    const cat = $('#inCat'), keep = cat.value;
+    cat.innerHTML = '<option value="">Select…</option>' + state.meta.categories.map(c => `<option>${esc(c)}</option>`).join('');
+    cat.value = keep;
+    fillDriverSelects();
+  }
+
+  async function init() {
     show(location.hash === '#manager' ? 'mgr' : 'request');
+    await refreshMeta();
   }
 
   if ('serviceWorker' in navigator) {

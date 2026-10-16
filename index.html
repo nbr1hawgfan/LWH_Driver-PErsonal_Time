@@ -26,27 +26,15 @@
   </header>
 
   <main id="app">
-    <!-- DRIVER SIGN-IN -->
-    <section class="view" id="view-signin" hidden>
-      <div class="card narrow">
-        <h2>Driver sign in</h2>
-        <p class="muted">Use this app to request <b>unpaid time off</b> when you have no PTO balance.</p>
-        <form id="formSignin" autocomplete="off">
-          <label>Employee #
-            <input id="inEmp" inputmode="numeric" required placeholder="e.g. 1042">
-          </label>
-          <label id="pinWrap" hidden>PIN
-            <input id="inPin" inputmode="numeric" type="password" maxlength="8" placeholder="Your PIN">
-          </label>
-          <button class="btn primary block" type="submit">Continue</button>
-        </form>
-      </div>
-    </section>
-
     <!-- NEW REQUEST -->
-    <section class="view" id="view-request" hidden>
+    <section class="view" id="view-request">
       <form id="formReq" class="card" autocomplete="off">
         <h2>New unpaid time off request</h2>
+        <p class="muted small" style="margin-top:-6px">For drivers with no PTO balance.</p>
+
+        <label style="margin-bottom:14px">Driver
+          <select id="inDriver" required><option value="">Loading names…</option></select>
+        </label>
 
         <div class="seg" role="radiogroup" aria-label="Request type">
           <button type="button" class="seg-btn active" data-type="Full">Full day(s)</button>
@@ -88,10 +76,10 @@
 
     <!-- MY REQUESTS -->
     <section class="view" id="view-mine" hidden>
-      <div class="row-between">
-        <h2>My requests</h2>
-        <button class="btn ghost small" id="btnSignout">Sign out</button>
-      </div>
+      <h2>My requests</h2>
+      <label style="margin:0 0 14px">Driver
+        <select id="mineDriver"><option value="">Loading names…</option></select>
+      </label>
       <div id="mineList" class="list"></div>
     </section>
 
