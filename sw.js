@@ -1,5 +1,5 @@
 // Bump VERSION whenever you push changes so devices pick up the new files.
-const VERSION = 'uto-v1.2.1';
+const VERSION = 'uto-v1.2.2';
 const SHELL = ['./', 'index.html', 'styles.css', 'app.js', 'config.js', 'manifest.json',
   'icons/icon-192.png', 'icons/icon-512.png', 'icons/apple-touch-icon.png'];
 
